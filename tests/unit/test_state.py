@@ -30,3 +30,19 @@ def test_snapshot_cms_colors():
         assert hasattr(snap, f"cms_{color}_hue")
         assert hasattr(snap, f"cms_{color}_saturation")
         assert hasattr(snap, f"cms_{color}_luminance")
+        assert getattr(snap, f"cms_{color}_hue") == 0
+        assert getattr(snap, f"cms_{color}_saturation") == 0
+        assert getattr(snap, f"cms_{color}_luminance") == 0
+
+
+def test_wb_20pt_lists_are_independent():
+    a = TVSettingsSnapshot()
+    b = TVSettingsSnapshot()
+    a.wb_20pt_red[0] = 99
+    assert b.wb_20pt_red[0] == 0
+
+
+def test_calibration_safe_defaults():
+    snap = TVSettingsSnapshot()
+    assert snap.local_dimming == "off"
+    assert snap.hdr_tone_mapping is False
