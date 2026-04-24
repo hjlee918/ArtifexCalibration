@@ -4,6 +4,12 @@ from unittest.mock import AsyncMock, MagicMock
 from app.tv.state import TVSettingsSnapshot, ChipGeneration
 
 
+@pytest.fixture(autouse=True)
+def patch_load_client_key(monkeypatch):
+    """Prevent ConnectionManager.__init__ from touching the real system keychain."""
+    monkeypatch.setattr("app.tv.connection.load_client_key", lambda ip: None)
+
+
 @pytest.fixture
 def mock_webos_client():
     client = AsyncMock()

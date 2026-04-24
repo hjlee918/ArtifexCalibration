@@ -1,16 +1,15 @@
 # app/tv/connection.py
 import asyncio
 import logging
+import re
 from bscpylgtv import WebOsClient
 from app.tv.state import TVSettingsSnapshot, ChipGeneration
 from app.utils.keychain import save_client_key, load_client_key, delete_client_key
 
 logger = logging.getLogger(__name__)
 
-# webOS 7.3–7.x on C1 (2021 late firmware) broke calibration APIs.
-# 7 < major < 20 is the problematic range. major >= 22 is the 2022+ calendar scheme (safe).
-_COMPAT_MAJOR_BAD_MIN = 7
-_COMPAT_MAJOR_BAD_MAX = 19
+_COMPAT_BAD_MAJOR = 7
+_COMPAT_BAD_MINOR_THRESHOLD = 3
 
 _CHIP_MAP = {
     "C1": ChipGeneration.ALPHA9_GEN4,   # 2021
@@ -41,21 +40,22 @@ _CHIP_MAP = {
 
 
 def _detect_chip(model_name: str) -> ChipGeneration:
+    if not model_name:
+        logger.debug("Empty model_name — chip generation unknown")
+        return ChipGeneration.UNKNOWN
     model_upper = model_name.upper()
     for suffix, gen in _CHIP_MAP.items():
-        if suffix in model_upper:
+        if re.search(rf"{re.escape(suffix)}(?!\d)", model_upper):
             return gen
     return ChipGeneration.UNKNOWN
 
 
 def _is_firmware_incompatible(major: str, minor: str) -> bool:
+    # webOS 7.3+ on 2021 C1 models broke the calibration API.
+    # webOS 22+ uses calendar-year versioning and is unaffected.
+    # Only major == 7, minor >= 3 is the confirmed bad range.
     try:
-        maj = int(major)
-        min_ = int(minor)
-        if _COMPAT_MAJOR_BAD_MIN <= maj <= _COMPAT_MAJOR_BAD_MAX:
-            # Flag any 7.x; for 7.3+ it's confirmed broken
-            return maj > _COMPAT_MAJOR_BAD_MIN or (maj == _COMPAT_MAJOR_BAD_MIN and min_ >= 3)
-        return False
+        return int(major) == _COMPAT_BAD_MAJOR and int(minor) >= _COMPAT_BAD_MINOR_THRESHOLD
     except ValueError:
         return False
 
@@ -69,11 +69,20 @@ class ConnectionManager:
         self._client: WebOsClient | None = None
 
     async def connect(self) -> None:
-        self._client = WebOsClient(self.ip, client_key=self.client_key)
-        await self._client.connect()
-        self.client_key = self._client.client_key
-        save_client_key(self.ip, self.client_key)
-        await self._post_connect()
+        client = WebOsClient(self.ip, client_key=self.client_key)
+        try:
+            await client.connect()
+            self.client_key = client.client_key
+            self._client = client
+            await self._post_connect()
+            save_client_key(self.ip, self.client_key)
+        except Exception:
+            self._client = None
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+            raise
 
     async def _post_connect(self) -> None:
         info = await self._client.get_software_info()
