@@ -37,7 +37,8 @@ def _parse_ssdp_response(data: bytes) -> dict:
     return result
 
 
-async def discover_tvs(timeout: float = 5.0) -> list[DiscoveredTV]:
+def _sync_discover(timeout: float) -> list[DiscoveredTV]:
+    """Blocking socket scan — call via run_in_executor to avoid blocking the event loop."""
     found: dict[str, DiscoveredTV] = {}
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
@@ -57,3 +58,13 @@ async def discover_tvs(timeout: float = 5.0) -> list[DiscoveredTV]:
     finally:
         sock.close()
     return list(found.values())
+
+
+async def discover_tvs(timeout: float = 5.0) -> list[DiscoveredTV]:
+    """Discover LG webOS TVs on the local network via SSDP M-SEARCH.
+
+    Non-blocking: socket I/O runs in a thread pool executor so the event loop
+    stays responsive during the scan.
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_discover, timeout)
