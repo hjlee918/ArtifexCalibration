@@ -1,20 +1,27 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working in this repository.
 
-## Repository Overview
+## Commands
 
-This is a collection of LG OLED TV calibration resources — PDFs and configuration files. There is no source code, build system, or test suite.
+- Install: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
+- Unit tests (no TV): `pytest tests/unit/ -v`
+- Hardware tests (TV required): `pytest tests/hardware/ -v -m hardware`
+- Single test: `pytest tests/unit/test_discovery.py::test_discover_returns_found_tvs -v`
+- Launch app: `python -m app.main`
 
-## Contents
+## Architecture
 
-- `Resources/LG OLED TV Calibration Resources.pdf` — General calibration reference
-- `Resources/LG 2018 OLED Profiling using LightSpace CMS.pdf` — LightSpace CMS profiling guide
-- `Resources/ColourSpace CMS Calibration Guides/` — Step-by-step calibration guides:
-  - `(1)` Pre-calibration setup and troubleshooting
-  - `(2)` ColourSpace 3D LUT calibration
-  - `(2a)` Naming convention changes for 2021 model year LG OLEDs
-  - `(3)` HDR manual calibration with tone curve upload (iTPG)
-  - `(3a)` HDR manual calibration with external TPG
-  - `(4)` Dolby Vision manual calibration with DV config upload
-- `Resources/(5) - Dolby Vision CFG File/` — Dolby Vision user display configuration files (standard and extended)
+Python + PyQt6 macOS desktop app for LG OLED C1–C6 calibration (2021–2026 models).
+
+- `app/tv/` — TV communication layer: discovery (SSDP), connection (bscpylgtv wrapper), settings extension (raw SSAP), state cache
+- `app/ui/` — PyQt6 UI: main window with sidebar, discovery panel, 5-tab settings panel
+- `app/utils/` — macOS Keychain wrapper for client key storage
+- `bscpylgtv` handles SSAP transport and calibration commands; `LGTVSettings` (app/tv/settings.py) adds picture settings bscpylgtv doesn't cover
+- `qasync` bridges asyncio and the PyQt6 event loop
+
+## Sub-projects
+
+- Sub-project 1 (this): TV discovery, connection, full expert picture menu read/write
+- Sub-project 2: LUT upload pipeline (1D/3D, SDR/HDR10/DV)
+- Sub-project 3: Measurement workflow + LUT generation (X-Rite meters, LightSpace Pi)
