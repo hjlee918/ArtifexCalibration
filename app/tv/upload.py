@@ -38,16 +38,21 @@ class LUTUploader:
             raise ValueError(f"Unknown LUTTarget: {target!r}")
 
     async def upload_file(self, path: Path,
-                          target: LUTTarget = LUTTarget.BT709) -> None:
-        """Upload a LUT file using bscpylgtv's own file parsers (no in-memory conversion).
-        Supported: .cal, .cube, .1dlut for 1D; .cube, .3dlut for 3D.
-        For .cal files, always uploads as 1D LUT.
+                          target: LUTTarget = LUTTarget.BT709,
+                          lut_type: str = "3d") -> None:
+        """Upload a LUT file using bscpylgtv's own file parsers.
+
+        Args:
+            path: Path to the LUT file (.cal, .1dlut, .cube)
+            target: BT709 or BT2020 (used for 3D .cube files)
+            lut_type: "1d" or "3d" — required to disambiguate .cube files,
+                      which can contain either a 1D or 3D LUT
         """
         path = Path(path)
         ext = path.suffix.lower()
-        if ext in (".cal", ".1dlut"):
+        if ext in (".cal", ".1dlut") or (ext == ".cube" and lut_type == "1d"):
             await self._client.upload_1d_lut_from_file(str(path))
-        elif ext == ".cube":
+        elif ext == ".cube" and lut_type == "3d":
             if target == LUTTarget.BT709:
                 await self._client.upload_3d_lut_bt709_from_file(str(path))
             else:
@@ -60,7 +65,7 @@ class LUTUploader:
         """Upload a 3×3 gamut matrix. Uses bscpylgtv set_3by3_gamut_data_bt709/bt2020."""
         if matrix.shape != (3, 3):
             raise ValueError(f"Gamut matrix must be (3, 3), got {matrix.shape}")
-        data = matrix.astype(np.float64)  # bscpylgtv uses float64 for gamut matrix
+        data = matrix.astype(np.float32)  # bscpylgtv validateCalibrationData requires float32
         if target == LUTTarget.BT709:
             await self._client.set_3by3_gamut_data_bt709(data)
         else:

@@ -102,8 +102,17 @@ async def test_upload_gamut_matrix_bt709(uploader, mock_client):
     matrix = np.eye(3, dtype=np.float32)
     await uploader.upload_gamut_matrix(matrix, target=LUTTarget.BT709)
     mock_client.set_3by3_gamut_data_bt709.assert_called_once()
+    arg = mock_client.set_3by3_gamut_data_bt709.call_args[0][0]
+    assert arg.dtype == np.float32
 
 
 async def test_upload_gamut_matrix_wrong_shape_raises(uploader):
     with pytest.raises(ValueError, match="must be"):
         await uploader.upload_gamut_matrix(np.eye(4), target=LUTTarget.BT709)
+
+
+async def test_upload_file_cube_as_1d(uploader, mock_client):
+    from pathlib import Path
+    mock_client.upload_1d_lut_from_file = AsyncMock(return_value=None)
+    await uploader.upload_file(Path("test.cube"), lut_type="1d")
+    mock_client.upload_1d_lut_from_file.assert_called_once()

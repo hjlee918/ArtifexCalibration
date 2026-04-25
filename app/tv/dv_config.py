@@ -17,8 +17,8 @@ class DolbyVisionConfig:
         """Upload the DV config to the TV via SSAP."""
         payload = {"data": self.raw_text}
         result = await client.request(_DV_CONFIG_URI, payload)
-        if not result.get("returnValue", False):
-            error = result.get("errorText", "unknown error")
+        if not isinstance(result, dict) or not result.get("returnValue", False):
+            error = result.get("errorText", "unknown error") if isinstance(result, dict) else "no response"
             raise RuntimeError(f"DV config upload failed: {error}")
 
 
