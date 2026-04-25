@@ -81,7 +81,7 @@ class MainWindow(QMainWindow):
             old = self._tv_status_widgets[ip]
             self._tv_status_area.removeWidget(old)
             old.deleteLater()
-        widget = TVStatusWidget(name, connected)
+        widget = TVStatusWidget(name, connected, parent=self)
         self._tv_status_widgets[ip] = widget
         self._tv_status_area.addWidget(widget)
 
