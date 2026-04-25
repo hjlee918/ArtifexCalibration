@@ -1,9 +1,18 @@
 # app/ui/main_window.py
+import asyncio
+import logging
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QPushButton, QFrame, QStackedWidget
+    QLabel, QPushButton, QFrame, QStackedWidget, QMessageBox
 )
 from PyQt6.QtCore import Qt
+from app.tv.discovery import discover_tvs
+from app.tv.connection import ConnectionManager
+from app.tv.settings import LGTVSettings
+from app.ui.discovery_panel import DiscoveryPanel
+from app.ui.settings_panel import SettingsPanel
+
+logger = logging.getLogger(__name__)
 
 
 class TVStatusWidget(QWidget):
@@ -26,8 +35,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("LG OLED Calibration")
         self.setMinimumSize(900, 600)
         self._tv_status_widgets: dict[str, TVStatusWidget] = {}
-        self._managers: dict = {}
+        self._managers: dict[str, ConnectionManager] = {}
+        self._settings_panels: dict[str, SettingsPanel] = {}
         self._build_ui()
+        self._setup_discovery()
 
     def _build_ui(self):
         central = QWidget()
@@ -36,7 +47,6 @@ class MainWindow(QMainWindow):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
-        # Sidebar
         sidebar = QFrame()
         sidebar.setFixedWidth(160)
         sidebar.setStyleSheet("background: #1a1a2e; border-right: 1px solid #333;")
@@ -66,15 +76,69 @@ class MainWindow(QMainWindow):
 
         sidebar_layout.addStretch()
 
-        # Main content area
         self.content_stack = QStackedWidget()
         self.content_stack.setStyleSheet("background: #111;")
 
         root_layout.addWidget(sidebar)
         root_layout.addWidget(self.content_stack, 1)
 
+    def _setup_discovery(self):
+        self._discovery_panel = DiscoveryPanel(on_connect=self._connect_to_tv)
+        self._discovery_panel.tv_selected.connect(self._on_tv_selected)
+        self.set_content(self._discovery_panel)
+
     def _on_nav(self, key: str):
-        pass  # Filled in by Task 10 when panels are wired up
+        if key == "settings":
+            # Show the settings panel for the first connected TV
+            for ip, panel in self._settings_panels.items():
+                self.set_content(panel)
+                return
+            self.set_content(self._discovery_panel)
+        else:
+            # Other nav items (calibrate, luts, prefs) are Sub-project 2/3 scope
+            self.set_content(self._discovery_panel)
+
+    def _on_tv_selected(self, ip: str, name: str):
+        if ip == "__scan__":
+            asyncio.ensure_future(self._run_scan())
+        else:
+            asyncio.ensure_future(self._connect_to_tv(ip, name))
+
+    async def _run_scan(self):
+        self._discovery_panel.set_scanning(True)
+        try:
+            tvs = await discover_tvs()
+            self._discovery_panel.show_discovered(tvs)
+        except Exception as e:
+            self._discovery_panel._status_label.setText(f"Scan failed: {e}")
+        finally:
+            self._discovery_panel.set_scanning(False)
+
+    async def _connect_to_tv(self, ip: str, name: str):
+        mgr = ConnectionManager(ip)
+        try:
+            await mgr.connect()
+        except Exception as e:
+            self._discovery_panel._status_label.setText(f"Connection failed: {e}")
+            logger.error("Failed to connect to %s: %s", ip, e)
+            return
+        self._managers[ip] = mgr
+        self.update_tv_status(ip, name, connected=True)
+        if mgr.firmware_warning:
+            QMessageBox.warning(
+                self,
+                "Firmware Warning",
+                f"webOS {mgr.snapshot.webos_version} detected.\n"
+                "This firmware version may be incompatible with calibration commands.",
+            )
+        lgtv = LGTVSettings(client=mgr.client, pic_mode=mgr.snapshot.pic_mode)
+        settings_panel = SettingsPanel(
+            snapshot=mgr.snapshot,
+            on_write=lambda coro: asyncio.ensure_future(coro),
+        )
+        settings_panel.set_connection(mgr, lgtv)
+        self._settings_panels[ip] = settings_panel
+        self.set_content(settings_panel)
 
     def update_tv_status(self, ip: str, name: str, connected: bool):
         if ip in self._tv_status_widgets:
