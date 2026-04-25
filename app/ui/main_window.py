@@ -110,7 +110,8 @@ class MainWindow(QMainWindow):
             tvs = await discover_tvs()
             self._discovery_panel.show_discovered(tvs)
         except Exception as e:
-            self._discovery_panel._status_label.setText(f"Scan failed: {e}")
+            logger.error("Scan failed: %s", e)
+            self._discovery_panel.show_error(f"Scan failed: {e}")
         finally:
             self._discovery_panel.set_scanning(False)
 
@@ -119,8 +120,8 @@ class MainWindow(QMainWindow):
         try:
             await mgr.connect()
         except Exception as e:
-            self._discovery_panel._status_label.setText(f"Connection failed: {e}")
             logger.error("Failed to connect to %s: %s", ip, e)
+            self._discovery_panel.show_error(f"Connection failed: {e}")
             return
         self._managers[ip] = mgr
         self.update_tv_status(ip, name, connected=True)

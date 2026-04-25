@@ -78,6 +78,9 @@ class DiscoveryPanel(QWidget):
         self._scan_btn.setEnabled(not scanning)
         self._scan_btn.setText("Scanning…" if scanning else "Scan Network")
 
+    def show_error(self, msg: str) -> None:
+        self._status_label.setText(msg)
+
     def _on_scan_clicked(self):
         self.tv_selected.emit("__scan__", "")
 
