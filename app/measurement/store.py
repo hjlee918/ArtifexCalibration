@@ -1,6 +1,7 @@
 # app/measurement/store.py
 from __future__ import annotations
 import json
+import shlex
 from pathlib import Path
 from app.measurement.session import PatchResult
 from app.measurement.patches import Patch
@@ -21,7 +22,7 @@ def save_cgats(results: list[PatchResult], path: Path) -> None:
     ]
     for i, r in enumerate(results, start=1):
         lines.append(
-            f"{i} {r.patch.label or str(i)} "
+            f'{i} "{r.patch.label or str(i)}" '
             f"{r.patch.r} {r.patch.g} {r.patch.b} "
             f"{r.reading.X:.6f} {r.reading.Y:.6f} {r.reading.Z:.6f}"
         )
@@ -41,7 +42,10 @@ def load_cgats(path: Path) -> list[PatchResult]:
         if line == "END_DATA":
             break
         if in_data and line:
-            parts = line.split()
+            try:
+                parts = shlex.split(line)
+            except ValueError:
+                continue
             if len(parts) >= 8:
                 label = parts[1]
                 r, g, b = int(parts[2]), int(parts[3]), int(parts[4])
