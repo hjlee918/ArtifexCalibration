@@ -1,6 +1,7 @@
 # app/ui/main_window.py
 import asyncio
 import logging
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QFrame, QStackedWidget, QMessageBox
@@ -11,6 +12,10 @@ from app.tv.connection import ConnectionManager
 from app.tv.settings import LGTVSettings
 from app.ui.discovery_panel import DiscoveryPanel
 from app.ui.settings_panel import SettingsPanel
+from app.ui.lut_panel import LUTPanel
+from app.tv.upload import LUTUploader, LUTTarget
+from app.tv.dv_config import load_dv_config
+from app.tv.lut import LUT1D, LUT3D
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +44,7 @@ class MainWindow(QMainWindow):
         self._settings_panels: dict[str, SettingsPanel] = {}
         self._build_ui()
         self._setup_discovery()
+        self._lut_panel = LUTPanel(on_upload=self._handle_lut_upload, parent=self)
 
     def _build_ui(self):
         central = QWidget()
@@ -88,14 +94,14 @@ class MainWindow(QMainWindow):
         self.set_content(self._discovery_panel)
 
     def _on_nav(self, key: str):
-        if key == "settings":
-            # Show the settings panel for the first connected TV
+        if key == "luts":
+            self.set_content(self._lut_panel)
+        elif key == "settings":
             for ip, panel in self._settings_panels.items():
                 self.set_content(panel)
                 return
             self.set_content(self._discovery_panel)
         else:
-            # Other nav items (calibrate, luts, prefs) are Sub-project 2/3 scope
             self.set_content(self._discovery_panel)
 
     def _on_tv_selected(self, ip: str, name: str):
@@ -140,6 +146,31 @@ class MainWindow(QMainWindow):
         settings_panel.set_connection(mgr, lgtv)
         self._settings_panels[ip] = settings_panel
         self.set_content(settings_panel)
+
+    async def _handle_lut_upload(self, lut_or_path, target, pic_mode):
+        """Dispatch LUT or DV config upload to all connected TVs."""
+        if not self._managers:
+            self._lut_panel.set_status("No TV connected", error=True)
+            return
+        for ip, mgr in self._managers.items():
+            if not mgr.is_connected:
+                continue
+            try:
+                if isinstance(lut_or_path, Path):
+                    cfg = load_dv_config(lut_or_path)
+                    await cfg.upload(mgr.client)
+                    self._lut_panel.set_status(f"DV config uploaded to {ip}")
+                else:
+                    uploader = LUTUploader(client=mgr.client, pic_mode=pic_mode or "expert1")
+                    if isinstance(lut_or_path, LUT1D):
+                        await uploader.upload_1d(lut_or_path)
+                        self._lut_panel.set_status(f"1D LUT uploaded to {ip}")
+                    elif isinstance(lut_or_path, LUT3D):
+                        await uploader.upload_3d(lut_or_path, target=target)
+                        self._lut_panel.set_status(f"3D LUT ({target.value}) uploaded to {ip}")
+            except Exception as e:
+                logger.error("LUT upload failed for %s: %s", ip, e)
+                self._lut_panel.set_status(f"Upload failed: {e}", error=True)
 
     def update_tv_status(self, ip: str, name: str, connected: bool):
         if ip in self._tv_status_widgets:
