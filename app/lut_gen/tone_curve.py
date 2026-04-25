@@ -32,6 +32,8 @@ def generate_1d_lut_from_grayscale(
     x_lut = np.linspace(0, 1, lut_size)
     correction_interp = np.interp(x_lut, stimulus, correction_ratio)
     lut_out = np.clip(x_lut * correction_interp, 0, 1).astype(np.float32)
+    # Enforce monotonic non-decrease — prevents color inversion artifacts on TV
+    np.maximum.accumulate(lut_out, out=lut_out)
 
     data = np.stack([lut_out, lut_out, lut_out], axis=0)
     return LUT1D(data=data)

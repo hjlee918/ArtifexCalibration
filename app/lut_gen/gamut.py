@@ -39,7 +39,8 @@ def generate_3d_lut_from_measurements(
     known_correction = []
     for result in results:
         stim = np.array([result.patch.r, result.patch.g, result.patch.b]) / 255.0
-        xyz = np.array([result.reading.X, result.reading.Y, result.reading.Z]) / white_Y * 100.0
+        # colour's BT.709 matrix expects XYZ normalized so D65 white = [0.95047, 1.0, 1.08883]
+        xyz = np.array([result.reading.X, result.reading.Y, result.reading.Z]) / white_Y
         measured_rgb = np.clip(xyz_to_rgb @ xyz, 0, 1)
         known_in.append(stim)
         known_correction.append(stim - measured_rgb)

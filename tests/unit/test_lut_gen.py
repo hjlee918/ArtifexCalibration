@@ -77,3 +77,34 @@ def test_generate_3d_lut_returns_lut3d():
     assert lut.data.dtype == np.float32
     assert lut.data.min() >= 0.0
     assert lut.data.max() <= 1.0
+
+
+def test_generate_1d_lut_is_monotonic():
+    lut = generate_1d_lut_from_grayscale(_linear_gray_results(), target_gamma=2.4)
+    # Non-monotonic 1D LUT causes color inversion artifacts on TV
+    diffs = np.diff(lut.data[0])
+    assert np.all(diffs >= 0), f"LUT has {(diffs < 0).sum()} non-monotonic steps"
+
+
+def test_generate_3d_lut_identity_display_near_identity():
+    """For a near-perfect display, the 3D LUT should be close to identity."""
+    from app.measurement.patches import build_sdr_full
+    import colour
+    cs = colour.RGB_COLOURSPACES["ITU-R BT.709"]
+    white_xyz = np.array([95.047, 100.0, 108.883])
+
+    results = []
+    for patch in build_sdr_full():
+        stim = np.array([patch.r, patch.g, patch.b]) / 255.0
+        # Perfect display: stimulus → XYZ via inverse BT.709 matrix
+        xyz = cs.matrix_RGB_to_XYZ @ stim * 100.0
+        results.append(PatchResult(
+            patch=patch,
+            reading=XYZReading(X=xyz[0], Y=xyz[1], Z=xyz[2])
+        ))
+
+    lut = generate_3d_lut_from_measurements(results, lut_size=9)
+    # For a perfect display the 3D LUT correction should be near-zero everywhere
+    # Check center of the LUT is close to (0.5, 0.5, 0.5)
+    center = lut.data[4, 4, 4]
+    assert np.allclose(center, [0.5, 0.5, 0.5], atol=0.05), f"Center: {center}"
