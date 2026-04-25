@@ -44,7 +44,10 @@ class MainWindow(QMainWindow):
         self._settings_panels: dict[str, SettingsPanel] = {}
         self._build_ui()
         self._setup_discovery()
-        self._lut_panel = LUTPanel(on_upload=self._handle_lut_upload, parent=self)
+        self._lut_panel = LUTPanel(
+            on_upload=lambda *a: asyncio.ensure_future(self._handle_lut_upload(*a)),
+            parent=self,
+        )
 
     def _build_ui(self):
         central = QWidget()
@@ -168,6 +171,8 @@ class MainWindow(QMainWindow):
                     elif isinstance(lut_or_path, LUT3D):
                         await uploader.upload_3d(lut_or_path, target=target)
                         self._lut_panel.set_status(f"3D LUT ({target.value}) uploaded to {ip}")
+                    else:
+                        logger.error("Unknown upload payload type: %s", type(lut_or_path))
             except Exception as e:
                 logger.error("LUT upload failed for %s: %s", ip, e)
                 self._lut_panel.set_status(f"Upload failed: {e}", error=True)
