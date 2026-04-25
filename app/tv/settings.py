@@ -1,8 +1,9 @@
 # app/tv/settings.py
+# NOTE: gamut matrix (set_3by3_gamut_data) and tone mapping (set_tonemap_params)
+# are already in bscpylgtv.WebOsClient — do not re-implement them here.
 from bscpylgtv import WebOsClient
 
 _SET_PQ_URI = "ssap://externalpq/setExternalPqData"
-_GET_PQ_URI = "ssap://externalpq/getExternalPqData"
 
 _CMS_COLOR_KEYS = {
     "red":     ("colorManagementRedHue",     "colorManagementRedSaturation",     "colorManagementRedLuminance"),
@@ -20,8 +21,10 @@ class LGTVSettings:
         self.pic_mode = pic_mode
 
     async def _set(self, data: dict) -> None:
+        # bscpylgtv raises PyLGTVCmdException on SSAP failure in production.
+        # The returnValue guard here covers alternative clients and test stubs.
         result = await self._client.request(_SET_PQ_URI, {"picMode": self.pic_mode, "data": data})
-        if not result.get("returnValue", False):
+        if result is not None and not result.get("returnValue", True):
             error = result.get("errorText", "unknown error")
             raise RuntimeError(f"SSAP setExternalPqData failed: {error}")
 
@@ -68,6 +71,7 @@ class LGTVSettings:
         await self._set({"dynamicColor": value})
 
     async def set_asbl(self, enabled: bool) -> None:
+        # VERIFY on hardware: ASBL may need client.enable_tpc_or_gsr("tpc", enabled) instead.
         await self._set({"autoStaticBrightnessLimit": "on" if enabled else "off"})
 
     async def set_local_dimming(self, value: str) -> None:
