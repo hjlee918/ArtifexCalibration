@@ -1,6 +1,6 @@
 # tests/unit/test_measurement_panel.py
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 from PyQt6.QtWidgets import QApplication, QPushButton, QComboBox, QLabel
 from app.ui.measurement_panel import MeasurementPanel
 from app.meter.device import MeterDevice, MeterType
