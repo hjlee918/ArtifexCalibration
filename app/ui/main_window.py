@@ -201,8 +201,9 @@ class MainWindow(QMainWindow):
             asyncio.ensure_future(self._run_measurement(action))
 
     async def _scan_meters(self):
+        loop = asyncio.get_running_loop()
         try:
-            devices = list_argyll_devices()
+            devices = await loop.run_in_executor(None, list_argyll_devices)
             self._measurement_panel.populate_meters(devices)
             self._measurement_panel.log(f"Found {len(devices)} meter(s)")
         except ArgyllNotFoundError as e:
@@ -230,7 +231,8 @@ class MainWindow(QMainWindow):
             pgen_ip = config.get("pgen_ip", "192.168.1.200")
             generator = PGeneratorClient(host=pgen_ip)
 
-        reader = ArgyllReader(device_index=0)
+        meter_idx = config.get("meter_index", 0)
+        reader = ArgyllReader(device_index=meter_idx)
 
         self._measurement_panel.set_running(True)
         self._measurement_panel.log(f"Starting {sequence.name} — {len(sequence)} patches")

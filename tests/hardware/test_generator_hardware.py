@@ -21,6 +21,7 @@ async def test_itpg_displays_white_patch(connected_mgr):
     gen = iTPGGenerator(client=connected_mgr.client)
     async with gen:
         await gen.set_patch(255, 255, 255)
+        # Visually confirm: TV shows a white full-field patch
 
 
 @pytest.mark.hardware
@@ -28,6 +29,7 @@ async def test_itpg_displays_red_patch(connected_mgr):
     gen = iTPGGenerator(client=connected_mgr.client)
     async with gen:
         await gen.set_patch(255, 0, 0)
+        # Visually confirm: TV shows a red full-field patch
 
 
 @pytest.mark.hardware

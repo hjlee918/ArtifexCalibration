@@ -1,6 +1,6 @@
 # tests/unit/test_measurement_panel.py
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from PyQt6.QtWidgets import QApplication, QPushButton, QComboBox, QLabel
 from app.ui.measurement_panel import MeasurementPanel
 from app.meter.device import MeterDevice, MeterType
@@ -13,7 +13,7 @@ def app():
 
 @pytest.fixture
 def panel(app):
-    p = MeasurementPanel(on_run=AsyncMock(), on_upload_lut=AsyncMock())
+    p = MeasurementPanel(on_run=MagicMock(), on_upload_lut=MagicMock())
     yield p
     p.close()
 
@@ -49,3 +49,31 @@ def test_populate_meters_updates_combo(panel):
         for i in range(c.count()):
             meter_items.append(c.itemText(i))
     assert any("i1" in item for item in meter_items)
+
+
+def test_set_progress_zero_total(panel):
+    panel.set_progress(0, 0)  # should not raise ZeroDivisionError
+    assert panel._progress_bar.value() == 0
+
+
+def test_set_running_disables_run_button(panel):
+    panel.set_running(True)
+    assert not panel._run_btn.isEnabled()
+    assert "measur" in panel._run_btn.text().lower()
+    panel.set_running(False)
+    assert panel._run_btn.isEnabled()
+
+
+def test_enable_upload_enables_button(panel):
+    assert not panel._upload_btn.isEnabled()
+    panel.enable_upload()
+    assert panel._upload_btn.isEnabled()
+
+
+def test_populate_meters_updates_meter_combo_directly(panel):
+    devices = [
+        MeterDevice(0, "i1 Display Pro", MeterType.COLORIMETER),
+    ]
+    panel.populate_meters(devices)
+    items = [panel._meter_combo.itemText(i) for i in range(panel._meter_combo.count())]
+    assert any("i1" in item for item in items)

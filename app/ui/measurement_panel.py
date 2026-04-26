@@ -167,11 +167,13 @@ class MeasurementPanel(QWidget):
         gen_use_itpg = "iTPG" in self._gen_combo.currentText()
         pgen_ip = self._pgen_ip.text().strip()
         seq_name = self._seq_combo.currentText()
+        meter_idx = self._meter_combo.currentIndex()
         self._on_run({
             "action": "measure",
             "use_itpg": gen_use_itpg,
             "pgen_ip": pgen_ip,
             "sequence": seq_name,
+            "meter_index": meter_idx,
         })
 
     def _on_upload_clicked(self):
