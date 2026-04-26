@@ -1,5 +1,6 @@
 # app/ui/main_window.py
 import asyncio
+import datetime
 import logging
 from pathlib import Path
 from PyQt6.QtWidgets import (
@@ -13,9 +14,18 @@ from app.tv.settings import LGTVSettings
 from app.ui.discovery_panel import DiscoveryPanel
 from app.ui.settings_panel import SettingsPanel
 from app.ui.lut_panel import LUTPanel
+from app.ui.measurement_panel import MeasurementPanel
 from app.tv.upload import LUTUploader, LUTTarget
 from app.tv.dv_config import load_dv_config
 from app.tv.lut import LUT1D, LUT3D
+from app.meter.argyll import ArgyllReader, list_argyll_devices, ArgyllNotFoundError
+from app.generator.itpg import iTPGGenerator
+from app.generator.pgenerator import PGeneratorClient
+from app.measurement.patches import build_sdr_full, build_hdr10_full
+from app.measurement.session import MeasurementSession
+from app.measurement.store import save_cgats
+from app.lut_gen.tone_curve import generate_1d_lut_from_grayscale
+from app.lut_gen.gamut import generate_3d_lut_from_measurements
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +57,11 @@ class MainWindow(QMainWindow):
         self._lut_panel = LUTPanel(
             on_upload=lambda *a: asyncio.ensure_future(self._handle_lut_upload(*a)),
             parent=self,
+        )
+        self._measurement_results = []
+        self._measurement_panel = MeasurementPanel(
+            on_run=self._on_measurement_action,
+            on_upload_lut=lambda: asyncio.ensure_future(self._upload_measurement_luts()),
         )
 
     def _build_ui(self):
@@ -104,6 +119,8 @@ class MainWindow(QMainWindow):
                 self.set_content(panel)
                 return
             self.set_content(self._discovery_panel)
+        elif key == "calibrate":
+            self.set_content(self._measurement_panel)
         else:
             self.set_content(self._discovery_panel)
 
@@ -176,6 +193,101 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 logger.error("LUT upload failed for %s: %s", ip, e)
                 self._lut_panel.set_status(f"Upload failed: {e}", error=True)
+
+    def _on_measurement_action(self, action):
+        if action == "__scan_meters__":
+            asyncio.ensure_future(self._scan_meters())
+        elif isinstance(action, dict) and action.get("action") == "measure":
+            asyncio.ensure_future(self._run_measurement(action))
+
+    async def _scan_meters(self):
+        try:
+            devices = list_argyll_devices()
+            self._measurement_panel.populate_meters(devices)
+            self._measurement_panel.log(f"Found {len(devices)} meter(s)")
+        except ArgyllNotFoundError as e:
+            self._measurement_panel.log(f"ArgyllCMS not found: {e}")
+
+    async def _run_measurement(self, config: dict):
+        if not self._managers:
+            self._measurement_panel.log("No TV connected")
+            return
+
+        mgr = next(iter(self._managers.values()))
+        if not mgr.is_connected:
+            self._measurement_panel.log("TV not connected")
+            return
+
+        seq_name = config.get("sequence", "")
+        if "HDR10" in seq_name:
+            sequence = build_hdr10_full()
+        else:
+            sequence = build_sdr_full()
+
+        if config.get("use_itpg"):
+            generator = iTPGGenerator(client=mgr.client)
+        else:
+            pgen_ip = config.get("pgen_ip", "192.168.1.200")
+            generator = PGeneratorClient(host=pgen_ip)
+
+        reader = ArgyllReader(device_index=0)
+
+        self._measurement_panel.set_running(True)
+        self._measurement_panel.log(f"Starting {sequence.name} — {len(sequence)} patches")
+
+        def on_progress(i, total, result):
+            self._measurement_panel.set_progress(i, total, result.patch.label)
+            self._measurement_panel.log(
+                f"  [{i}/{total}] {result.patch.label}: "
+                f"X={result.reading.X:.3f} Y={result.reading.Y:.3f} Z={result.reading.Z:.3f}"
+            )
+
+        try:
+            session = MeasurementSession(
+                generator=generator,
+                reader=reader,
+                sequence=sequence,
+                on_progress=on_progress,
+            )
+            self._measurement_results = await session.run()
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = Path.home() / "Documents" / f"lg_cal_{timestamp}.cgats"
+            save_cgats(self._measurement_results, save_path)
+            self._measurement_panel.log(f"Saved: {save_path}")
+            self._measurement_panel.enable_upload()
+        except Exception as e:
+            self._measurement_panel.log(f"Measurement failed: {e}")
+        finally:
+            self._measurement_panel.set_running(False)
+
+    async def _upload_measurement_luts(self):
+        if not self._measurement_results:
+            self._measurement_panel.log("No measurement data — run a measurement first")
+            return
+        if not self._managers:
+            self._measurement_panel.log("No TV connected")
+            return
+
+        self._measurement_panel.log("Generating 1D tone curve LUT…")
+        try:
+            lut_1d = generate_1d_lut_from_grayscale(self._measurement_results)
+            self._measurement_panel.log("Generating 3D gamut LUT…")
+            lut_3d = generate_3d_lut_from_measurements(self._measurement_results, lut_size=17)
+        except Exception as e:
+            self._measurement_panel.log(f"LUT generation failed: {e}")
+            return
+
+        for ip, mgr in self._managers.items():
+            if not mgr.is_connected:
+                continue
+            uploader = LUTUploader(client=mgr.client, pic_mode=mgr.snapshot.pic_mode)
+            try:
+                await uploader.upload_1d(lut_1d)
+                self._measurement_panel.log(f"1D LUT uploaded to {ip}")
+                await uploader.upload_3d(lut_3d, target=LUTTarget.BT709)
+                self._measurement_panel.log(f"3D LUT uploaded to {ip}")
+            except Exception as e:
+                self._measurement_panel.log(f"Upload failed for {ip}: {e}")
 
     def update_tv_status(self, ip: str, name: str, connected: bool):
         if ip in self._tv_status_widgets:
